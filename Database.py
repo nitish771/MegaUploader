@@ -44,6 +44,16 @@ class DB:
 		self.cur.execute(cmd)
 		self.commit()
 
+	def delete_by_pattern(self, pattern):
+		cmd = f'''delete from Content where content like '%{pattern}%\''''
+		self.cur.execute(cmd)
+		self.commit()
+
+	def delete(self, name):
+		cmd = f'''delete from Content where content like '{name}\''''
+		self.cur.execute(cmd)
+		self.commit()
+
 	def schema(self):
 		cmd = "pragma table_info(Content)"
 		return self.cur.execute(cmd).fetchall()
