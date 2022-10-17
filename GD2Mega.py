@@ -2,14 +2,18 @@ import subprocess as sp
 import os
 import sys
 import re
+from math import ceil
+from pprint import pprint
+from collections import defaultdict as Dict
 
 from Database import DB
 
 
 class Mega:
-	def __init__(self, data_folder, copy_folder, email, password):
+	def __init__(self, data_folder='', copy_folder='', email='', password=''):
 		self.main_folder = data_folder.split('/')[-1]
-		print(self.main_folder, '\n')
+		if data_folder:
+			print('\n\n' 'Uploading Folder ', self.main_folder)
 		self.folder = data_folder
 		self.copy_folder = copy_folder+'/'+self.main_folder
 		self.email = email
@@ -18,6 +22,9 @@ class Mega:
 		self.db = DB(self.email, self.password, 'accounts.db')
 		self.dirs = []
 		self.files = []
+		self.folds_index_20gb = []
+		self.folds_groups = []
+		self.groups = []
 
 	def start(self, register=False, show_size=True):
 		if register:
@@ -26,7 +33,7 @@ class Mega:
 		self.create_dirs()
 
 		if show_size:
-			self.folder_size(self.folder)
+			self.get_size(self.folder)
 
 		## Upload files
 		if not show_size:
@@ -72,20 +79,6 @@ class Mega:
 		size /= 1024
 		return f'{size:.2f} GB'
 
-	def folder_size(self, folder):
-		size = 0
-		if os.path.isfile(folder):
-			return os.stat(folder).st_size
-		for root, dirs, files in os.walk(folder):
-			for file in files:
-				# print(root, file)
-				size += os.stat(root+'/'+file).st_size
-		return size
-
-	def get_size(self, folder):
-		# self.get_remote_content(folder)
-		return self.readable_size(self.folder_size(folder))
-
 	def get_remote_content(self, folder):
 		for root, dirs, files in os.walk(folder):
 			for file in files:
@@ -102,19 +95,15 @@ class Mega:
 
 	def create_dir(self, dir):
 		cmd = 'megamkdir -u ' + self.email + ' -p ' + self.password
-
-		#### Uncomment it 
 		new_dir = self.to_mega_path(dir.replace(self.folder, self.copy_folder))
 		output = os.system(cmd + ' ' + new_dir)
-		print("Created " + self.to_mega_path(dir))
-
+		
 	def create_parent_dirs(self):
 		new_path = ''
 		for part in self.copy_folder.split('/'):
 			new_path =  os.path.join(new_path, part)
 			try:
 				self.create_dir(new_path)
-				print('Creating parent path', new_path)
 			except Exception as e:
 				print(e)
 
@@ -125,14 +114,40 @@ class Mega:
 		cmd = f'megaput -u {self.email} -p {self.password}'
 		new_path = self.to_mega_path(path.replace(self.folder, self.folder.split('/')[-1]))
 		print("Upload : " + new_path)
+		# print(cmd + ' --path ' + new_path + ' "' + path + '"') 
+		os.system(cmd + ' --path ' + new_path + ' "' + path + '"') 
 
-		#### Uncomment it 
-		os.system(cmd + ' --path ' + self.to_mega_path(path) + ' "' + path + '"') 
-		# print(cmd + ' --path ' + self.to_mega_path(path) + ' "' + path + '"') 
+	def knapSack(self, sizes_list, W, n):
+		sizes = [int(ceil(i*10)) for i in sizes_list]
+		W = W*10
 
-	def find_folders_lte_20gb(self):
-		# https://www.codingninjas.com/codestudio/library/count-number-of-subarrays-with-sum-k
-		pass
+		K = [[0 for w in range(W + 1)] for i in range(n + 1)]
+				
+		for i in range(n + 1):
+			for w in range(W + 1):
+				if i == 0 or w == 0:
+					K[i][w] = 0
+				elif sizes[i - 1] <= w:
+					K[i][w] = max(sizes[i - 1]
+					+ K[i - 1][w - sizes[i - 1]],
+								K[i - 1][w])
+				else:
+					K[i][w] = K[i - 1][w]
+
+		res = K[n][W]
+		copy_res = res
+		w = W		
+
+		for i in range(n, 0, -1):
+			if res <= 0:
+				break
+			if res == K[i - 1][w]:
+				continue
+			else:
+				self.folds_index_20gb.append(i-1)
+				res = res - sizes[i - 1]
+				w = w - sizes[i - 1]
+		return copy_res/10
 
 	def account_details(self, email=None, password=None):
 		if email is None:
@@ -168,6 +183,80 @@ class Mega:
 			pass
 		self.db.insert(content)
 	
+	def get_size(self, folder=None):
+		if folder == None:
+			folder = self.folder
+		return self.readable_size(self.folder_size(folder))
+
+	def find_folders_lte(self, folds, size=20, sizes=None):
+		if sizes is None:
+			sizes = [self.size_in_gb(fold) for fold in folds]
+
+		self.folds_index_20gb = []
+
+		total_size = self.knapSack(sizes, size, len(folds))
+		local_group = [total_size]
+		
+		for i in self.folds_index_20gb:
+			local_group.append(folds[i])
+			folds.pop(i)
+			sizes.pop(i)
+		self.folds_groups.append(local_group)
+
+		if folds:
+			if not self.all_size_zeros(sizes):
+				# self.find_folders_lte(folds, size, sizes)
+				# print(folds, sizes)
+				pass
+			else:
+				folds.insert(0, 0)
+				self.folds_groups.append(folds)
+		self.groups = self.final_grouping(self.folds_groups)
+		return self.groups
+
+	@staticmethod
+	def final_grouping(groups):
+		final_groups = []
+		local_group = []
+		cur_size = 0
+
+		for item in groups:
+			cur_size += item[0]
+			if cur_size  >= 18 and cur_size <= 20:
+				local_group.extend(item[1:])
+				cur_size = 0
+			else:
+				local_group.extend(item[1:])
+			if cur_size == 0:
+				final_groups.append(local_group)
+				local_group = []
+		final_groups.append(local_group)
+
+		return final_groups
+
+	@staticmethod
+	def all_size_zeros(sizes):
+		return all([1 if i == 0 else 0 for i in sizes])
+
+	@staticmethod
+	def size_in_gb(fold):
+		byts = Mega.folder_size(fold)
+		return round(byts/pow(1024, 3), 2)
+
+	@staticmethod
+	def size_in_mb(fold):
+		byts = Mega.folder_size(fold)
+		return round(byts/pow(1024, 2), 2)
+
+	@staticmethod
+	def folder_size(folder):
+		size = 0
+		if os.path.isfile(folder):
+			return os.stat(folder).st_size
+		for root, dirs, files in os.walk(folder):
+			for file in files:
+				size += os.stat(root+'/'+file).st_size
+		return size
 
 
 def upload(folds, mega_folder, email, password, first=False):
@@ -183,16 +272,34 @@ def upload(folds, mega_folder, email, password, first=False):
 
 if __name__ == '__main__':
 	folds = []
+	accounts = []
 
 	while 1:
-		fold = input("Enter folder path[empty to get out] : ")
+		fold = input("Enter folder path : ")
 		if fold == '':
 			break
 		folds.append(fold)
 
-	mega_path = input("Mega path to put folder[empty to root] : ")
-	email = input("Enter Email : ")
+	while 1:
+		user = input("Enter username : ")
+		if user == '':
+			break
+		accounts.append(user)
+
+	mega = Mega()
+	groups = mega.find_folders_lte(folds, 20)
+
+	mega_path = input("Mega path to put folder : ")
 	password = input("Enter Password : ")
 	register = True if input("Wanna register first[y|n] : ") == 'y' else False;
 
-	upload(folds, mega_path, email, password, register)
+	mega.find_folders_lte(folds, 20)
+
+	print('\n\n' 'Grouping')
+	print(mega.folds_groups)
+
+	for group, email in zip(mega.groups, accounts):
+		if group:
+			print(email, group)
+			upload(group, mega_path, email, password, register)
+		print()
