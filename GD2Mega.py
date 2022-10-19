@@ -117,14 +117,16 @@ class Mega:
 		# print(cmd + ' --path ' + new_path + ' "' + path + '"') 
 		os.system(cmd + ' --path ' + new_path + ' "' + path + '"') 
 
-	def knapSack(self, sizes_list, W, n):
+	def KnapSack(self, sizes_list, W):
+		n = len(sizes_list)
+		# print(sizes_list, W)
 		sizes = [int(ceil(i*10)) for i in sizes_list]
 		W = W*10
-
 		K = [[0 for w in range(W + 1)] for i in range(n + 1)]
 				
 		for i in range(n + 1):
 			for w in range(W + 1):
+				# print(n+1, W+1, i-1, len(sizes))
 				if i == 0 or w == 0:
 					K[i][w] = 0
 				elif sizes[i - 1] <= w:
@@ -147,7 +149,7 @@ class Mega:
 				self.folds_index_20gb.append(i-1)
 				res = res - sizes[i - 1]
 				w = w - sizes[i - 1]
-		return copy_res/10
+		return copy_res/10, self.folds_index_20gb
 
 	def account_details(self, email=None, password=None):
 		if email is None:
@@ -189,28 +191,42 @@ class Mega:
 		return self.readable_size(self.folder_size(folder))
 
 	def find_folders_lte(self, folds, size=20, sizes=None):
+		length = 0
+		if sizes:
+			length = len(sizes)
+	 
 		if sizes is None:
-			sizes = [self.size_in_gb(fold) for fold in folds]
+			sizes = []  
+			copy_folds = folds
+			
+			for fold in folds:
+				s = self.size_in_gb(fold)
+				if s >= size:
+					self.large_folds.append(fold)
+					copy_folds.remove(fold)
+				else:
+					length += 1
+					sizes.append(s)
+			folds = copy_folds
 
-		self.folds_index_20gb = []
+		while not self.all_size_zeros(sizes):
+			self.folds_index_20gb = []
 
-		total_size = self.knapSack(sizes, size, len(folds))
-		local_group = [total_size]
+			res = self.KnapSack(sizes, size)
+			total_size = res[0]
+			local_group = [total_size]
+
+			for i in self.folds_index_20gb:
+				local_group.append(folds[i])
+				folds.pop(i)
+				sizes.pop(i)
+			
+			self.folds_groups.append(local_group)		
+			
+		if sizes:
+			# print(folds)
+			self.folds_groups[-1].extend(folds)
 		
-		for i in self.folds_index_20gb:
-			local_group.append(folds[i])
-			folds.pop(i)
-			sizes.pop(i)
-		self.folds_groups.append(local_group)
-
-		if folds:
-			if not self.all_size_zeros(sizes):
-				# self.find_folders_lte(folds, size, sizes)
-				# print(folds, sizes)
-				pass
-			else:
-				folds.insert(0, 0)
-				self.folds_groups.append(folds)
 		self.groups = self.final_grouping(self.folds_groups)
 		return self.groups
 
@@ -231,7 +247,6 @@ class Mega:
 				final_groups.append(local_group)
 				local_group = []
 		final_groups.append(local_group)
-
 		return final_groups
 
 	@staticmethod
