@@ -25,6 +25,7 @@ class Mega:
 		self.folds_index_20gb = []
 		self.folds_groups = []
 		self.groups = []
+		self.large_folds = []
 
 	def start(self, register=False, show_size=True):
 		if register:
